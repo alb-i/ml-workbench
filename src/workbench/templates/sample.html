@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ sample.id }} · ml-workbench{% endblock %}
+{% block content %}
+<div class="toolbar"><h1>{{ sample.id }}</h1>
+  <a href="/runs/{{ run.run_id }}/data?split={{ split }}">← data of {{ run.run_id }} ({{ split }})</a></div>
+<div class="detail">
+  {% if images %}<img class="big" src="/images/{{ sample.id }}.png?scale=10" alt="{{ sample.id }}" width="280" height="280">{% endif %}
+  <div>
+    <table class="facts">
+      <tr><th>label in this run</th><td>{{ sample.label }}</td></tr>
+      {% if original_label is not none %}<tr><th>original label (dataset)</th><td>{{ original_label }}</td></tr>{% endif %}
+      <tr><th>prediction</th><td>{{ sample.pred }}</td></tr>
+      <tr><th>confidence</th><td>{{ "%.4f"|format(sample.confidence) }}</td></tr>
+      <tr><th>loss</th><td>{{ "%.4f"|format(sample.loss) }}</td></tr>
+    </table>
+    <h2>Top-3 probabilities</h2>
+    <table class="facts">
+      {% for cls, p in top %}
+      <tr><th>{{ cls }}</th><td class="num">{{ "%.4f"|format(p) }}</td>
+        <td><span class="bar" style="width: {{ (160 * p)|round|int }}px"></span></td></tr>
+      {% endfor %}
+    </table>
+    <h2>Decisions</h2>
+    {% if history is none %}<p class="muted">No curation folder (start with <code>--curation</code>).</p>
+    {% elif history %}
+    <table class="facts">
+      {% for d in history %}<tr><td>{{ d.timestamp|replace("T", " ") }}</td><td>{{ d.action }}{% if d.new_label is not none %} → {{ d.new_label }}{% endif %}</td><td>round {{ d.round }}</td><td>{{ d.reviewer }}</td><td>{{ d.reason }}</td></tr>{% endfor %}
+    </table>
+    {% else %}<p class="muted">None yet.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

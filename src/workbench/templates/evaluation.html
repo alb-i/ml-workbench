@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Evaluation {{ run.run_id }} · ml-workbench{% endblock %}
+{% block content %}
+<div class="toolbar"><h1>{{ run.run_id }}</h1></div>
+{% set active = "evaluation" %}{% include "_run_nav.html" %}
+
+<div class="tiles">
+  <div class="tile"><span>{{ split }} images</span><b>{{ ev.n }}</b></div>
+  <div class="tile"><span>accuracy</span><b>{{ "%.2f"|format(100 * ev.acc) }} %</b></div>
+  <div class="tile"><span>errors</span><b><a href="/runs/{{ run.run_id }}/data?split={{ split }}&errors=true">{{ ev.errors }}</a></b></div>
+  <div class="tile"><span>macro-F1</span><b>{{ "%.2f"|format(100 * ev.macro_f1) }} %</b></div>
+  <div class="tile"><span>mean loss</span><b>{{ "%.4f"|format(ev.loss) }}</b></div>
+  <div class="tile"><span>ECE (15 bins)</span><b>{{ "%.2f"|format(100 * ev.reliability.ece) }} %</b></div>
+</div>
+
+<div class="charts">
+  <div class="chart">
+    <h2>Confusion matrix <span class="muted">(rows: label, columns: prediction; click a cell for its images)</span></h2>
+    <table class="confusion">
+      <thead><tr><th></th>{% for j in range(ev.confusion|length) %}<th class="num">{{ j }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for row in ev.confusion %}{% set i = loop.index0 %}
+        <tr><th class="num">{{ i }}</th>
+        {% for c in row %}{% set j = loop.index0 %}
+          {% if i == j %}
+          <td class="num diag"><a href="/runs/{{ run.run_id }}/data?split={{ split }}&label={{ i }}&pred={{ j }}">{{ c }}</a></td>
+          {% elif c %}
+          <td class="num off" style="--share: {{ (20 + 70 * c / ev.max_off_diagonal)|round|int }}%"><a href="/runs/{{ run.run_id }}/data?split={{ split }}&label={{ i }}&pred={{ j }}">{{ c }}</a></td>
+          {% else %}
+          <td class="num zero"></td>
+          {% endif %}
+        {% endfor %}</tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="chart">
+    <h2>Reliability diagram <span class="muted">(accuracy vs. mean confidence per bin)</span></h2>
+    <div class="canvas"><canvas id="c-rel"></canvas></div>
+  </div>
+</div>
+
+<table class="perclass">
+  <thead><tr><th>Class</th><th class="num">Support</th><th class="num">Precision</th><th class="num">Recall</th><th class="num">F1</th></tr></thead>
+  <tbody>
+  {% for c in ev.classes %}
+    <tr><td><a href="/runs/{{ run.run_id }}/data?split={{ split }}&label={{ c.cls }}">{{ c.cls }}</a></td>
+      <td class="num">{{ c.support }}</td>
+      <td class="num">{{ "%.2f"|format(100 * c.precision) }} %</td>
+      <td class="num">{{ "%.2f"|format(100 * c.recall) }} %</td>
+      <td class="num">{{ "%.2f"|format(100 * c.f1) }} %</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  const rel = {{ ev.reliability | tojson }};
+  const chart = lineChart('c-rel', {
+    xLabel: 'mean confidence in bin', yLabel: 'accuracy',
+    series: [{ label: 'model (point per non-empty bin)', points: true },
+             { label: 'perfect calibration', dash: [4, 3] }],
+  });
+  addPoints(chart, 0, rel.confidence.map((x, i) => ({ x, y: rel.accuracy[i], n: rel.count[i] })));
+  addPoints(chart, 1, [{ x: 0, y: 0 }, { x: 1, y: 1 }]);
+  chart.options.plugins.tooltip = { callbacks: { label: (c) => c.datasetIndex === 0
+    ? `confidence ${c.raw.x.toFixed(3)}, accuracy ${c.raw.y.toFixed(3)}, ${c.raw.n} images` : '' } };
+  chart.options.scales.x.min = 0; chart.options.scales.x.max = 1;
+  chart.options.scales.y.min = 0; chart.options.scales.y.max = 1;
+  chart.update('none');
+</script>
+{% endblock %}

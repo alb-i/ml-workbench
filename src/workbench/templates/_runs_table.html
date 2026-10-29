@@ -1,0 +1,26 @@
+<table id="runs-table" class="runs" hx-get="/partials/runs" hx-trigger="every 5s"
+       hx-include="#compare-form" hx-swap="outerHTML">
+  <thead>
+    <tr>
+      <th></th><th>Run</th><th>Status</th><th>Model</th><th>Dataset</th>
+      <th class="num">Best val acc</th><th class="num">Duration</th><th>Started</th><th>Commit</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in runs %}
+    <tr>
+      <td><input type="checkbox" name="ids" value="{{ r.run_id }}" {% if r.run_id in selected %}checked{% endif %}></td>
+      <td><a href="/runs/{{ r.run_id }}">{{ r.run_id }}</a></td>
+      <td><span class="status {{ r.status }}">{{ r.status }}</span></td>
+      <td>{{ r.model }}</td>
+      <td><code>{{ r.dataset_version }}</code></td>
+      <td class="num">{{ "%.2f %%"|format(100 * r.best_val_acc) if r.best_val_acc is not none else "—" }}</td>
+      <td class="num">{{ r.duration_s|duration }}</td>
+      <td>{{ r.start_time[:19]|replace("T", " ") }}</td>
+      <td><code title="{{ r.git_commit }}">{{ r.git_commit[:7] }}{% if r.git_commit.endswith("-dirty") %}*{% endif %}</code></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="muted">No runs yet in this folder.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

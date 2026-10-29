@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Review · ml-workbench{% endblock %}
+{% block content %}
+<form class="filters" method="get" action="/review">
+  <label>candidates from <select name="run">{% for r in runs %}<option {% if r == run %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+  <label>split <select name="split">{% for s in splits %}<option {% if s == split %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
+  <label><input type="checkbox" name="unsure" value="true" {% if unsure %}checked{% endif %}> second look at "unsure"</label>
+  <label>round <input name="round" size="3" value="{{ round }}"></label>
+  <label>reviewer <input name="reviewer" size="8" value="{{ reviewer }}"></label>
+  <button type="submit">Show</button>
+</form>
+
+<div class="progress" title="{{ reviewed }} of {{ total }} candidates reviewed">
+  <div style="width: {{ (100 * reviewed / total)|round(1) if total else 0 }}%"></div>
+</div>
+<p class="muted">{{ reviewed }} of {{ total }} candidates of {{ split }} reviewed · {{ pending }} in this queue</p>
+
+{% if current %}
+<div class="detail review">
+  {% if images %}<img class="big" src="/images/{{ current.id }}.png?scale=12" alt="{{ current.id }}" width="336" height="336">{% endif %}
+  <div>
+    <h1>{{ current.id }}</h1>
+    <p class="muted">rank {{ current.rank }}</p>
+    <div class="opinions">
+      <div class="tile"><span>given label</span><b>{{ current.label }}</b></div>
+      <div class="tile"><span>model prediction</span><b>{{ current.pred }}</b></div>
+      <div class="tile"><span>p(given label)</span><b>{{ "%.3f"|format(current.self_confidence) }}</b></div>
+      {% if original_label is not none and original_label != current.label %}
+      <div class="tile"><span>original label</span><b>{{ original_label }}</b></div>{% endif %}
+    </div>
+    <form id="decide" method="post" action="/review/decide">
+      {% for k, v in [("run", run), ("split", split), ("sample_id", current.id), ("round", round), ("reviewer", reviewer), ("after", after)] %}
+      <input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      {% if unsure %}<input type="hidden" name="unsure" value="true">{% endif %}
+      <input type="hidden" name="action" id="action">
+      <input type="hidden" name="new_label" id="new_label">
+      <label>reason (optional) <input name="reason" id="reason" size="40" autocomplete="off"></label>
+      <p class="keys">
+        <button type="button" data-key="k">k keep</button>
+        <button type="button" data-key="d">d drop</button>
+        <button type="button" data-key="u">u unsure</button>
+        <a href="/review?run={{ run }}&split={{ split }}&after={{ current.rank }}{% if unsure %}&unsure=true{% endif %}&round={{ round }}&reviewer={{ reviewer }}" id="next">n next (skip)</a>
+      </p>
+      <p class="muted">0–9: relabel to that digit (the given label's digit = keep). In the reason
+        field Enter leaves it; keys work again after Esc or a click outside.</p>
+    </form>
+  </div>
+</div>
+{% if upcoming and images %}<link rel="prefetch" href="/images/{{ upcoming.id }}.png?scale=12">{% endif %}
+<script>
+  const form = document.getElementById('decide');
+  function decide(action, label = '') {
+    document.getElementById('action').value = action;
+    document.getElementById('new_label').value = label;
+    form.submit();
+  }
+  document.querySelectorAll('[data-key]').forEach(b => b.addEventListener('click',
+    () => decide({ k: 'keep', d: 'drop', u: 'unsure' }[b.dataset.key])));
+  const reason = document.getElementById('reason');
+  reason.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); reason.blur(); }
+  });
+  document.addEventListener('keydown', e => {
+    if (document.activeElement === reason || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (/^[0-9]$/.test(e.key)) decide('relabel', e.key);
+    else if (e.key === 'k') decide('keep');
+    else if (e.key === 'd') decide('drop');
+    else if (e.key === 'u') decide('unsure');
+    else if (e.key === 'n') location.href = document.getElementById('next').href;
+    else if (e.key === 'r') { e.preventDefault(); reason.focus(); }
+  });
+</script>
+{% else %}
+<p>{% if pending %}End of the queue reached; {{ pending }} skipped candidates are left:
+  <a href="/review?run={{ run }}&split={{ split }}{% if unsure %}&unsure=true{% endif %}&round={{ round }}&reviewer={{ reviewer }}">start again from the top</a>.
+  {% else %}Nothing left in this queue.{% endif %}
+  <a href="/curation">Decisions and export →</a></p>
+{% endif %}
+{% endblock %}

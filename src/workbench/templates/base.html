@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ml-workbench{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/chart.umd.min.js"></script>
+  <script src="/static/charts.js"></script>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">ml-workbench</a>
+    <nav><a href="/">Runs</a> <a href="/review">Review</a> <a href="/curation">Curation</a></nav>
+    <div id="gpu-badge" hx-get="/partials/gpu" hx-trigger="load, every 5s"></div>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

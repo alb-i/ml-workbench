@@ -1,0 +1,22 @@
+# All hooks use the micromamba env `mnist-showcase` (see CLAUDE.md)
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check
+        entry: micromamba run -n mnist-showcase ruff check --fix
+        language: system
+        require_serial: true
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: micromamba run -n mnist-showcase ruff format
+        language: system
+        require_serial: true
+        types: [python]
+      - id: pytest
+        name: pytest (fast)
+        entry: micromamba run -n mnist-showcase pytest -q
+        language: system
+        require_serial: true
+        pass_filenames: false

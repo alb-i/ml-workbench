@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Runs · ml-workbench{% endblock %}
+{% block content %}
+<form id="compare-form" action="/compare" method="get">
+  <div class="toolbar">
+    <h1>Runs</h1>
+    <button type="submit" id="compare-btn">Compare selected (2–5)</button>
+  </div>
+  {% include "_runs_table.html" %}
+</form>
+<script>
+  // enable the compare button only for 2-5 selected runs
+  function updateCompare() {
+    const n = document.querySelectorAll('#compare-form input[name=ids]:checked').length;
+    document.getElementById('compare-btn').disabled = n < 2 || n > 5;
+  }
+  document.addEventListener('change', updateCompare);
+  document.body.addEventListener('htmx:afterSwap', updateCompare);
+  updateCompare();
+</script>
+{% endblock %}

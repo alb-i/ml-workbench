@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Data {{ run.run_id }} · ml-workbench{% endblock %}
+{% block content %}
+<div class="toolbar"><h1>{{ run.run_id }}</h1></div>
+{% set active = "data" %}{% include "_run_nav.html" %}
+
+<form class="filters" method="get">
+  <input type="hidden" name="split" value="{{ split }}">
+  <label>label <select name="label"><option value="">any</option>
+    {% for k in classes %}<option value="{{ k }}" {% if filters.label == k %}selected{% endif %}>{{ k }}</option>{% endfor %}</select></label>
+  <label>predicted <select name="pred"><option value="">any</option>
+    {% for k in classes %}<option value="{{ k }}" {% if filters.pred == k %}selected{% endif %}>{{ k }}</option>{% endfor %}</select></label>
+  <label><input type="checkbox" name="errors" value="true" {% if filters.errors %}checked{% endif %}> only errors</label>
+  <label>loss ≥ <input name="min_loss" size="5" value="{{ filters.min_loss if filters.min_loss is not none else '' }}"></label>
+  <label>confidence ≤ <input name="max_confidence" size="5" value="{{ filters.max_confidence if filters.max_confidence is not none else '' }}"></label>
+  <label>sort <select name="sort">{% for s in sorts %}<option {% if s == sort %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label>
+  <button type="submit">Apply</button>
+  <span class="muted">{{ total }} images{% if pages > 1 %} · page {{ page }} of {{ pages }}{% endif %}</span>
+</form>
+
+{% if not images %}<p class="muted">No dataset adapter: start the workbench with <code>--data</code> to see the images.</p>{% endif %}
+<div class="grid">
+  {% for it in items %}
+  <a class="cell" href="/runs/{{ run.run_id }}/data/{{ it.id }}?split={{ split }}" title="{{ it.id }}">
+    {% if images %}<img src="/images/{{ it.id }}.png?scale=3" alt="{{ it.id }}" loading="lazy" width="84" height="84">{% endif %}
+    <span>label {{ it.label }} · pred {{ it.pred }}</span>
+    <span class="muted">conf {{ "%.2f"|format(it.confidence) }} · loss {{ "%.2f"|format(it.loss) }}</span>
+  </a>
+  {% else %}
+  <p class="muted">No images match.</p>
+  {% endfor %}
+</div>
+
+{% if pages > 1 %}
+<p class="pager">
+  {% if page > 1 %}<a href="?{{ page_query }}&page={{ page - 1 }}">← previous</a>{% endif %}
+  {% if page < pages %}<a href="?{{ page_query }}&page={{ page + 1 }}">next →</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

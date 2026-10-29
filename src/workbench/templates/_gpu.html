@@ -1,0 +1,5 @@
+{% for g in gpus %}
+<span class="gpu" title="{{ g.name }}">GPU {{ g.util }}% · {{ "%.1f"|format(g.mem_used_gb) }}/{{ "%.1f"|format(g.mem_total_gb) }} GB · {{ g.temp_c }} °C</span>
+{% else %}
+<span class="gpu muted">no GPU stats</span>
+{% endfor %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Curation · ml-workbench{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1>Curation</h1>
+  <form method="post" action="/curation/export"><button type="submit">Export to decisions.csv</button></form>
+  {% if exported %}<span class="muted">wrote {{ exported }} decisions to <code>{{ csv_path }}</code> — commit it in git</span>{% endif %}
+</div>
+
+<div class="tiles">
+  <div class="tile"><span>samples decided</span><b>{{ stats.samples }}</b></div>
+  {% for a in actions %}<div class="tile"><span>{{ a }}</span><b>{{ stats.counts[a] }}</b></div>{% endfor %}
+  <div class="tile"><span>agree with model</span><b>{{ "%d / %d"|format(stats.agree, stats.judged) }}</b></div>
+  <div class="tile" title="keep/relabel where the model's prediction differed from the given label"><span>… where it disputed the label</span><b>{{ "%d / %d"|format(stats.agree_disputed, stats.disputed) }}</b></div>
+</div>
+
+<form class="filters" method="get">
+  <label>action <select name="action"><option value="">any</option>
+    {% for a in actions %}<option {% if a == action %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></label>
+  <label>round <input name="round" size="3" value="{{ round }}"></label>
+  <button type="submit">Filter</button>
+  <span class="muted">{{ rows|length }} decisions, newest first ({{ stats.decisions }} in total)</span>
+</form>
+
+<table class="decisions">
+  <thead><tr><th></th><th>Sample</th><th>Action</th><th class="num">New label</th><th class="num">Given</th><th class="num">Model</th><th>Reason</th><th class="num">Round</th><th>Reviewer</th><th>Time</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{% if images %}<img src="/images/{{ r.sample_id }}.png?scale=1" alt="" width="28" height="28">{% endif %}</td>
+      <td>{% if r.source_run %}<a href="/runs/{{ r.source_run }}/data/{{ r.sample_id }}">{{ r.sample_id }}</a>{% else %}{{ r.sample_id }}{% endif %}</td>
+      <td>{{ r.action }}</td>
+      <td class="num">{{ r.new_label if r.new_label is not none else "" }}</td>
+      <td class="num">{{ r.given_label if r.given_label is not none else "" }}</td>
+      <td class="num">{{ r.model_pred if r.model_pred is not none else "" }}</td>
+      <td>{{ r.reason }}</td>
+      <td class="num">{{ r.round }}</td>
+      <td>{{ r.reviewer }}</td>
+      <td>{{ r.timestamp|replace("T", " ") }}</td>
+      <td><form method="post" action="/curation/{{ r.id }}/undo"><input type="hidden" name="back" value="/curation?action={{ action }}&round={{ round }}"><button type="submit" class="small">undo</button></form></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="11" class="muted">No decisions yet. <a href="/review">Open the review queue.</a></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

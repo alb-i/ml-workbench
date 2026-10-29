@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Compare · ml-workbench{% endblock %}
+{% block content %}
+<h1>Compare {{ runs|length }} runs</h1>
+<table class="runs">
+  <thead><tr><th></th><th>Run</th><th>Status</th><th>Model</th><th>Dataset</th><th class="num">Best val acc</th><th class="num">Duration</th></tr></thead>
+  <tbody>
+    {% for r in runs %}
+    <tr>
+      <td><span class="swatch" data-i="{{ loop.index0 }}"></span></td>
+      <td><a href="/runs/{{ r.run_id }}">{{ r.run_id }}</a></td>
+      <td><span class="status {{ r.status }}">{{ r.status }}</span></td>
+      <td>{{ r.model }}</td>
+      <td><code>{{ r.dataset_version }}</code></td>
+      <td class="num">{{ "%.2f %%"|format(100 * r.best_val_acc) if r.best_val_acc is not none else "—" }}</td>
+      <td class="num">{{ r.duration_s|duration }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="charts">
+  <div class="chart"><h2>Train loss</h2><div class="canvas"><canvas id="c-tloss"></canvas></div></div>
+  <div class="chart"><h2>Val loss</h2><div class="canvas"><canvas id="c-vloss"></canvas></div></div>
+  <div class="chart"><h2>Val accuracy</h2><div class="canvas"><canvas id="c-vacc"></canvas></div></div>
+  <div class="chart"><h2>Learning rate</h2><div class="canvas"><canvas id="c-lr"></canvas></div></div>
+  <div class="chart"><h2>Weight change Σ |w − w<sub>lag steps ago</sub>| (dashed: longer lag)</h2><div class="canvas"><canvas id="c-wd"></canvas></div></div>
+  <div class="chart" id="ls-chart" hidden><h2>Line search: mean shortening factor (accepted / start step)</h2><div class="canvas"><canvas id="c-ls"></canvas></div></div>
+</div>
+
+<div class="toolbar">
+  <h2>Config</h2>
+  <label><input type="checkbox" id="only-diff" checked> only differences</label>
+</div>
+<table class="diff only-diff" id="diff">
+  <thead><tr><th>key</th>{% for r in runs %}<th><span class="swatch" data-i="{{ loop.index0 }}"></span> {{ r.run_id }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {% for key, values, differs in diff %}
+    <tr class="{{ 'differs' if differs else 'same' }}">
+      <td><code>{{ key }}</code></td>
+      {% for v in values %}<td><code>{{ v | tojson }}</code></td>{% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  const runIds = {{ runs | map(attribute="run_id") | list | tojson }};
+  document.querySelectorAll('.swatch').forEach(el => el.style.background = PALETTE[el.dataset.i]);
+  document.getElementById('only-diff').addEventListener('change', e =>
+    document.getElementById('diff').classList.toggle('only-diff', e.target.checked));
+
+  const series = runIds.map(id => ({ label: id }));
+  const valSeries = runIds.map(id => ({ label: id, points: true }));
+  const charts = {
+    tloss: lineChart('c-tloss', { yLabel: 'loss', series }),
+    vloss: lineChart('c-vloss', { yLabel: 'loss', series: valSeries }),
+    vacc: lineChart('c-vacc', { yLabel: 'accuracy', series: valSeries }),
+    lr: lineChart('c-lr', { yLabel: 'lr', series }),
+    wd: lineChart('c-wd', { yLabel: 'Σ |Δw|' }),  // colour = run, dash = lag
+  };
+  runIds.forEach(async (id, i) => {
+    const records = await (await fetch(`/api/runs/${encodeURIComponent(id)}/metrics`)).json();
+    const pts = (split, key) => records
+      .filter(r => r.split === split && r[key] !== undefined && r.step !== undefined)
+      .map(r => ({ x: r.step, y: r[key] }));
+    addPoints(charts.tloss, i, pts('train', 'loss'));
+    addPoints(charts.vloss, i, pts('val', 'loss'));
+    addPoints(charts.vacc, i, pts('val', 'acc'));
+    addPoints(charts.lr, i, pts('train', 'lr'));
+    const ls = shorteningSeries(records);
+    if (ls.length && !charts.ls) {  // only if a run used the line-search optimizer
+      document.getElementById('ls-chart').hidden = false;
+      charts.ls = lineChart('c-ls', { yLabel: 'factor (log scale)', yLog: true, series });
+    }
+    if (ls.length) addPoints(charts.ls, i, ls);
+    weightDeltaSeries(records).forEach(({ lag, points }, j) => {
+      const k = ensureDataset(charts.wd, `${id}/${lag}`, () => ({
+        label: `${id} (${lag})`, color: PALETTE[i % PALETTE.length], dash: j ? [5, 3] : [], points: true,
+      }));
+      addPoints(charts.wd, k, points);
+    });
+    Object.values(charts).forEach(c => c.update('none'));
+  });
+</script>
+{% endblock %}

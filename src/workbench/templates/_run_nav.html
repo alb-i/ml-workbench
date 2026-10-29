@@ -1,0 +1,9 @@
+<nav class="subnav">
+  <a href="/runs/{{ run.run_id }}" {% if active == "live" %}class="active"{% endif %}>Live</a>
+  <a href="/runs/{{ run.run_id }}/evaluation{% if split %}?split={{ split }}{% endif %}" {% if active == "evaluation" %}class="active"{% endif %}>Evaluation</a>
+  <a href="/runs/{{ run.run_id }}/data{% if split %}?split={{ split }}{% endif %}" {% if active == "data" %}class="active"{% endif %}>Data</a>
+  {% if splits %}
+  <span class="muted">split:</span>
+  {% for s in splits %}<a href="?split={{ s }}" {% if s == split %}class="active"{% endif %}>{{ s }}</a>{% endfor %}
+  {% endif %}
+</nav>

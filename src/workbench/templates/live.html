@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}{{ run.run_id }} · ml-workbench{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1>{{ run.run_id }}</h1>
+  <span id="status" class="status {{ run.status }}">{{ run.status }}</span>
+</div>
+{% if has_predictions %}{% set active = "live" %}{% include "_run_nav.html" %}{% endif %}
+<p class="muted">
+  model <b>{{ run.model or "—" }}</b> · dataset <code>{{ run.dataset_version }}</code>
+  · commit <code title="{{ run.git_commit }}">{{ run.git_commit[:7] }}</code>
+  · started {{ run.start_time[:19]|replace("T", " ") }}
+</p>
+
+<div class="tiles">
+  <div class="tile"><span>step</span><b id="t-step">—</b></div>
+  <div class="tile"><span>epoch</span><b id="t-epoch">—</b></div>
+  <div class="tile"><span>train loss</span><b id="t-loss">—</b></div>
+  <div class="tile"><span>val loss</span><b id="t-vloss">—</b></div>
+  <div class="tile"><span>best val acc</span><b id="t-vacc">—</b></div>
+  <div class="tile"><span>lr</span><b id="t-lr">—</b></div>
+  <div class="tile"><span>img/s</span><b id="t-imgs">—</b></div>
+  <div class="tile"><span>GPU util</span><b id="t-util">—</b></div>
+  <div class="tile"><span>GPU memory</span><b id="t-mem">—</b></div>
+  <div class="tile"><span>GPU temp</span><b id="t-temp">—</b></div>
+</div>
+
+<div class="charts">
+  <div class="chart"><h2>Loss</h2><div class="canvas"><canvas id="c-loss"></canvas></div></div>
+  <div class="chart"><h2>Accuracy</h2><div class="canvas"><canvas id="c-acc"></canvas></div></div>
+  <div class="chart"><h2>Learning rate</h2><div class="canvas"><canvas id="c-lr"></canvas></div></div>
+  <div class="chart"><h2>Throughput</h2><div class="canvas"><canvas id="c-imgs"></canvas></div></div>
+  <div class="chart"><h2>Weight change Σ |w − w<sub>lag steps ago</sub>|</h2><div class="canvas"><canvas id="c-wd"></canvas></div></div>
+  <div class="chart" id="ls-chart" hidden><h2>Line search: mean shortening factor (accepted / start step)</h2><div class="canvas"><canvas id="c-ls"></canvas></div></div>
+  <div class="chart wide"><h2>GPU memory and utilisation</h2><div class="canvas"><canvas id="c-gpu"></canvas></div></div>
+</div>
+
+{% for name in samples %}
+<div class="chart sample">
+  <h2>samples/{{ name }}</h2>
+  <img src="/runs/{{ run.run_id | urlencode }}/samples/{{ name | urlencode }}" alt="{{ name }}">
+</div>
+{% endfor %}
+
+<details>
+  <summary>config.yaml</summary>
+  <pre>{{ run.config | tojson(indent=2) }}</pre>
+</details>
+
+<script>
+  const runId = {{ run.run_id | tojson }};
+  const startTs = Date.parse({{ run.start_time | tojson }}) / 1000 || null;
+  const charts = {
+    loss: lineChart('c-loss', { yLabel: 'loss', series: [{ label: 'train' }, { label: 'val', points: true }] }),
+    acc: lineChart('c-acc', { yLabel: 'accuracy', series: [{ label: 'train' }, { label: 'val', points: true }] }),
+    lr: lineChart('c-lr', { yLabel: 'lr', series: [{ label: 'lr' }] }),
+    imgs: lineChart('c-imgs', { yLabel: 'img/s', series: [{ label: 'img/s' }] }),
+    wd: lineChart('c-wd', { yLabel: 'Σ |Δw|' }),  // one line per lag, added as they appear
+    gpu: lineChart('c-gpu', {
+      xLabel: 'minutes since start', yLabel: 'GB', y2: 'util %',
+      series: [{ label: 'device memory used (NVML)' },
+               { label: 'reported by training', points: true },
+               { label: 'utilisation', axis: 'y2', dash: [4, 3] }],
+    }),
+  };
+  let t0 = startTs, bestVal = null;
+  const minutes = (ts) => (ts - t0) / 60;
+
+  function onMetrics(records) {
+    if (!records.length) return;
+    if (t0 === null) t0 = records[0].ts;
+    const pts = (split, key) => records
+      .filter(r => r.split === split && r[key] !== undefined && r.step !== undefined)
+      .map(r => ({ x: r.step, y: r[key] }));
+    addPoints(charts.loss, 0, pts('train', 'loss'));
+    addPoints(charts.loss, 1, pts('val', 'loss'));
+    addPoints(charts.acc, 0, pts('train', 'acc'));
+    addPoints(charts.acc, 1, pts('val', 'acc'));
+    addPoints(charts.lr, 0, pts('train', 'lr'));
+    addPoints(charts.imgs, 0, pts('train', 'img_s'));
+    const ls = shorteningSeries(records);
+    if (ls.length && !charts.ls) {  // only for runs with the line-search optimizer
+      document.getElementById('ls-chart').hidden = false;
+      charts.ls = lineChart('c-ls', { yLabel: 'factor (log scale)', yLog: true, series: [{ label: 'mean factor' }] });
+    }
+    if (ls.length) addPoints(charts.ls, 0, ls);
+    for (const { lag, points } of weightDeltaSeries(records)) {
+      const i = ensureDataset(charts.wd, lag, () => ({ label: `vs. ${lag} steps ago`, points: true }));
+      addPoints(charts.wd, i, points);
+    }
+    addPoints(charts.gpu, 1, records.filter(r => r.gpu_mem_gb !== undefined)
+      .map(r => ({ x: minutes(r.ts), y: r.gpu_mem_gb })));
+    Object.values(charts).forEach(c => c.update('none'));
+
+    const last = (split, key) => {
+      for (let i = records.length - 1; i >= 0; i--)
+        if (records[i].split === split && records[i][key] !== undefined) return records[i][key];
+    };
+    const set = (id, v) => { if (v !== undefined) document.getElementById(id).textContent = v; };
+    const lastRec = records[records.length - 1];
+    set('t-step', lastRec.step);
+    set('t-epoch', lastRec.epoch);
+    set('t-loss', last('train', 'loss') !== undefined ? fmt(last('train', 'loss')) : undefined);
+    set('t-vloss', last('val', 'loss') !== undefined ? fmt(last('val', 'loss')) : undefined);
+    set('t-lr', last('train', 'lr') !== undefined ? fmt(last('train', 'lr'), 3) : undefined);
+    set('t-imgs', last('train', 'img_s') !== undefined ? Math.round(last('train', 'img_s')) : undefined);
+    for (const r of records)
+      if (r.split === 'val' && r.acc !== undefined && (bestVal === null || r.acc > bestVal)) bestVal = r.acc;
+    if (bestVal !== null) set('t-vacc', (100 * bestVal).toFixed(2) + ' %');
+  }
+
+  function onGpu({ ts, gpus }) {
+    if (!gpus.length) return;
+    if (t0 === null) t0 = ts;
+    const g = gpus[0];
+    document.getElementById('t-util').textContent = g.util + ' %';
+    document.getElementById('t-mem').textContent = `${g.mem_used_gb.toFixed(2)} / ${g.mem_total_gb.toFixed(1)} GB`;
+    document.getElementById('t-temp').textContent = g.temp_c + ' °C';
+    addPoints(charts.gpu, 0, [{ x: minutes(ts), y: g.mem_used_gb }]);
+    addPoints(charts.gpu, 2, [{ x: minutes(ts), y: g.util }]);
+    charts.gpu.update('none');
+  }
+
+  const es = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream`);
+  es.addEventListener('metrics', e => onMetrics(JSON.parse(e.data)));
+  es.addEventListener('gpu', e => onGpu(JSON.parse(e.data)));
+  es.addEventListener('status', e => {
+    const s = JSON.parse(e.data), el = document.getElementById('status');
+    el.textContent = s; el.className = 'status ' + s;
+  });
+  es.addEventListener('end', () => es.close());
+</script>
+{% endblock %}
